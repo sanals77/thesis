@@ -118,7 +118,7 @@ jobs:
           trivy image --severity HIGH,CRITICAL ${{ env.ECR_WORKER_REPOSITORY }}:${{ github.sha }}
 
       - name: Upload scan results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-scan-results
           path: |
@@ -137,7 +137,7 @@ jobs:
           fi
 
       - name: Upload images as artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: docker-images
           path: |
@@ -190,7 +190,7 @@ jobs:
           opa eval --data ../../policies/terraform/cost.rego --input tfplan.json --format pretty "data.terraform.cost.warn"
 
       - name: Upload Terraform plan
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
           path: infrastructure/terraform/tfplan.json
@@ -258,7 +258,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: docker-images
           path: /tmp
@@ -281,7 +281,7 @@ jobs:
           syft ${{ env.ECR_WORKER_REPOSITORY }}:${{ github.sha }} -o cyclonedx-json > worker-sbom.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: |
