@@ -84,17 +84,20 @@ jobs:
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
+        continue-on-error: true
 
       - name: Sign container images
+        if: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ steps.set-tag.outputs.tag }}
         run: |
-          cosign sign --key env://COSIGN_PRIVATE_KEY $ECR_REGISTRY/${{ env.ECR_API_REPOSITORY }}:$IMAGE_TAG
-          cosign sign --key env://COSIGN_PRIVATE_KEY $ECR_REGISTRY/${{ env.ECR_WORKER_REPOSITORY }}:$IMAGE_TAG
+          cosign sign --key env://COSIGN_PRIVATE_KEY $ECR_REGISTRY/${{ env.ECR_API_REPOSITORY }}:$IMAGE_TAG || echo "Skipping image signing"
+          cosign sign --key env://COSIGN_PRIVATE_KEY $ECR_REGISTRY/${{ env.ECR_WORKER_REPOSITORY }}:$IMAGE_TAG || echo "Skipping image signing"
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        continue-on-error: true
 
   # Deploy to Dev
   deploy-dev:
