@@ -4,7 +4,10 @@ Provides RESTful endpoints with health checks and database connectivity
 """
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import (
+    Counter, Histogram, Gauge,
+    generate_latest, CONTENT_TYPE_LATEST
+)
 from functools import wraps
 import psycopg2
 import os
@@ -20,9 +23,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Prometheus metrics
-REQUEST_COUNT = Counter('api_requests_total', 'Total API requests', ['method', 'endpoint', 'status'])
-REQUEST_DURATION = Histogram('api_request_duration_seconds', 'API request duration', ['method', 'endpoint'])
-DB_CONNECTIONS = Gauge('api_db_connections_active', 'Active database connections')
+REQUEST_COUNT = Counter(
+    'api_requests_total',
+    'Total API requests',
+    ['method', 'endpoint', 'status']
+)
+REQUEST_DURATION = Histogram(
+    'api_request_duration_seconds',
+    'API request duration',
+    ['method', 'endpoint']
+)
+DB_CONNECTIONS = Gauge(
+    'api_db_connections_active',
+    'Active database connections'
+)
 ITEMS_TOTAL = Gauge('api_items_total', 'Total items in database')
 
 def track_request_time(f):
@@ -33,11 +47,17 @@ def track_request_time(f):
         try:
             result = f(*args, **kwargs)
             duration = time.time() - start_time
-            REQUEST_DURATION.labels(method=request.method, endpoint=request.path).observe(duration)
+            REQUEST_DURATION.labels(
+                method=request.method,
+                endpoint=request.path
+            ).observe(duration)
             return result
-        except Exception as e:
+        except Exception:
             duration = time.time() - start_time
-            REQUEST_DURATION.labels(method=request.method, endpoint=request.path).observe(duration)
+            REQUEST_DURATION.labels(
+                method=request.method,
+                endpoint=request.path
+            ).observe(duration)
             raise
     return decorated_function
 
@@ -90,20 +110,31 @@ def ready():
 @track_request_time
 def get_items():
     """Get all items from database"""
-    REQUEST_COUNT.labels(method='GET', endpoint='/api/items', status='success').inc()
-    
+    REQUEST_COUNT.labels(
+        method='GET',
+        endpoint='/api/items',
+        status='success'
+    ).inc()
+
     conn = get_db_connection()
     if not conn:
-        REQUEST_COUNT.labels(method='GET', endpoint='/api/items', status='error').inc()
+        REQUEST_COUNT.labels(
+            method='GET',
+            endpoint='/api/items',
+            status='error'
+        ).inc()
         return jsonify({'error': 'Database unavailable'}), 503
-    
+
     try:
         cur = conn.cursor()
-        cur.execute('SELECT id, name, description, created_at FROM items ORDER BY created_at DESC')
+        cur.execute(
+            'SELECT id, name, description, created_at FROM items '
+            'ORDER BY created_at DESC'
+        )
         items = cur.fetchall()
         cur.close()
         conn.close()
-        
+
         return jsonify({
             'items': [
                 {
@@ -123,29 +154,38 @@ def get_items():
 @track_request_time
 def create_item():
     """Create a new item"""
-    REQUEST_COUNT.labels(method='POST', endpoint='/api/items', status='success').inc()
-    
+    REQUEST_COUNT.labels(
+        method='POST',
+        endpoint='/api/items',
+        status='success'
+    ).inc()
+
     data = request.get_json(force=True)
-    
+
     if not data or 'name' not in data:
-        REQUEST_COUNT.labels(method='POST', endpoint='/api/items', status='error').inc()
+        REQUEST_COUNT.labels(
+            method='POST',
+            endpoint='/api/items',
+            status='error'
+        ).inc()
         return jsonify({'error': 'Name is required'}), 400
-    
+
     conn = get_db_connection()
     if not conn:
         return jsonify({'error': 'Database unavailable'}), 503
-    
+
     try:
         cur = conn.cursor()
         cur.execute(
-            'INSERT INTO items (name, description) VALUES (%s, %s) RETURNING id',
+            'INSERT INTO items (name, description) VALUES (%s, %s) '
+            'RETURNING id',
             (data['name'], data.get('description', ''))
         )
         item_id = cur.fetchone()[0]
         conn.commit()
         cur.close()
         conn.close()
-        
+
         return jsonify({
             'id': item_id,
             'message': 'Item created successfully'
@@ -160,14 +200,14 @@ def delete_item(item_id):
     conn = get_db_connection()
     if not conn:
         return jsonify({'error': 'Database unavailable'}), 503
-    
+
     try:
         cur = conn.cursor()
         cur.execute('DELETE FROM items WHERE id = %s', (item_id,))
         conn.commit()
         cur.close()
         conn.close()
-        
+
         return jsonify({'message': 'Item deleted successfully'}), 200
     except Exception as e:
         logger.error(f"Error deleting item: {e}")
@@ -186,9 +226,9 @@ def metrics():
             ITEMS_TOTAL.set(count)
             cur.close()
             conn.close()
-        except:
+        except Exception:
             pass
-    
+
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 if __name__ == '__main__':
