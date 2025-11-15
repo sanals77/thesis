@@ -1,0 +1,33 @@
+# Terraform Environment Variables
+# Copy this file to terraform.tfvars and update values as needed
+
+aws_region     = "us-east-1"
+aws_account_id = "537651148488"
+environment    = "dev"
+project_name   = "cloud-native-app"
+
+# VPC Configuration
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+enable_nat_gateway = true
+
+# EKS Configuration
+eks_cluster_version     = "1.28"
+eks_node_instance_types = ["t3.medium"]
+eks_node_desired_size   = 2
+eks_node_min_size       = 1
+eks_node_max_size       = 4
+
+# RDS Configuration
+rds_instance_class    = "db.t3.micro"
+rds_allocated_storage = 20
+rds_database_name     = "appdb"
+rds_username          = "dbadmin"
+
+# Tags
+tags = {
+  Project     = "CloudNativeThesis"
+  Environment = "dev"
+  ManagedBy   = "Terraform"
+  Owner       = "SanalThesis"
+}

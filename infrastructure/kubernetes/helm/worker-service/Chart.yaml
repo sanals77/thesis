@@ -1,0 +1,13 @@
+apiVersion: v2
+name: worker-service
+description: A Helm chart for Worker Service microservice
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - worker
+  - microservice
+  - cloud-native
+maintainers:
+  - name: Sanal Thesis
+    email: sanal@example.com

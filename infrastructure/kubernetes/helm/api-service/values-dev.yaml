@@ -1,0 +1,24 @@
+# Development environment values for api-service
+environment: dev
+
+image:
+  tag: "v1.1.5"
+
+replicaCount: 1
+
+ingress:
+  enabled: false
+
+autoscaling:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 300m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+podDisruptionBudget:
+  enabled: false

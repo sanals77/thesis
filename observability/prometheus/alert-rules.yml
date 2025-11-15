@@ -1,0 +1,211 @@
+# Prometheus Alerting Rules for Cloud-Native Application
+
+groups:
+  - name: application_alerts
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (service, namespace)
+            /
+            sum(rate(http_requests_total[5m])) by (service, namespace)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "High error rate detected in {{ $labels.service }}"
+          description: "Service {{ $labels.service }} in namespace {{ $labels.namespace }} has error rate above 5% (current: {{ $value | humanizePercentage }})"
+
+      # Service down
+      - alert: ServiceDown
+        expr: up{job="api-service"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} in namespace {{ $labels.namespace }} has been down for more than 2 minutes"
+
+      # High response time
+      - alert: HighResponseTime
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (service, le)
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "High response time for {{ $labels.service }}"
+          description: "95th percentile response time for {{ $labels.service }} is above 1 second (current: {{ $value }}s)"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            container_memory_usage_bytes{pod=~"api-service.*|worker-service.*"}
+            /
+            container_spec_memory_limit_bytes{pod=~"api-service.*|worker-service.*"}
+          ) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "High memory usage in {{ $labels.pod }}"
+          description: "Pod {{ $labels.pod }} is using more than 90% of its memory limit (current: {{ $value | humanizePercentage }})"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: |
+          (
+            rate(container_cpu_usage_seconds_total{pod=~"api-service.*|worker-service.*"}[5m])
+            /
+            container_spec_cpu_quota{pod=~"api-service.*|worker-service.*"}
+          ) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "High CPU usage in {{ $labels.pod }}"
+          description: "Pod {{ $labels.pod }} is using more than 90% of its CPU limit (current: {{ $value | humanizePercentage }})"
+
+      # Pod restart
+      - alert: PodRestarting
+        expr: rate(kube_pod_container_status_restarts_total{pod=~"api-service.*|worker-service.*"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Pod {{ $labels.pod }} is restarting"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has restarted {{ $value }} times in the last 15 minutes"
+
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # Node down
+      - alert: NodeDown
+        expr: up{job="kubernetes-nodes"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Node {{ $labels.instance }} is down"
+          description: "Kubernetes node {{ $labels.instance }} has been down for more than 5 minutes"
+
+      # High node CPU
+      - alert: HighNodeCPU
+        expr: |
+          (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) by (instance)) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High CPU usage on node {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} has CPU usage above 80% (current: {{ $value | humanizePercentage }})"
+
+      # High node memory
+      - alert: HighNodeMemory
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High memory usage on node {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} has memory usage above 85% (current: {{ $value | humanizePercentage }})"
+
+      # Disk space low
+      - alert: DiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/"}
+            /
+            node_filesystem_size_bytes{mountpoint="/"}
+          ) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Low disk space on node {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} has less than 15% disk space available (current: {{ $value | humanizePercentage }})"
+
+  - name: database_alerts
+    interval: 30s
+    rules:
+      # Database connection failures
+      - alert: DatabaseConnectionFailures
+        expr: |
+          rate(database_connection_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection failures detected"
+          description: "Database connection error rate is above 0.1 per second (current: {{ $value }})"
+
+      # Slow queries
+      - alert: SlowDatabaseQueries
+        expr: |
+          histogram_quantile(0.95,
+            rate(database_query_duration_seconds_bucket[5m])
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "95th percentile query duration is above 2 seconds (current: {{ $value }}s)"
+
+  - name: policy_compliance_alerts
+    interval: 60s
+    rules:
+      # Policy violations
+      - alert: PolicyViolationsDetected
+        expr: |
+          increase(policy_violations_total[1h]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Multiple policy violations detected"
+          description: "More than 10 policy violations detected in the last hour (current: {{ $value }})"
+
+      # Vulnerability scan failures
+      - alert: VulnerabilityScanFailed
+        expr: |
+          vulnerability_scan_status == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Vulnerability scan failed"
+          description: "Vulnerability scanning has failed for {{ $labels.image }}"
+
+      # Critical vulnerabilities found
+      - alert: CriticalVulnerabilitiesFound
+        expr: |
+          vulnerability_count{severity="critical"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Critical vulnerabilities found"
+          description: "{{ $value }} critical vulnerabilities found in {{ $labels.image }}"

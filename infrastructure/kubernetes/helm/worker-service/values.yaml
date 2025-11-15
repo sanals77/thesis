@@ -1,0 +1,112 @@
+# Default values for worker-service
+replicaCount: 1
+
+image:
+  repository: 537651148488.dkr.ecr.us-east-1.amazonaws.com/cloud-native-app-dev-worker-service
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  limits:
+    cpu: 300m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Database configuration
+database:
+  host: ""
+  port: "5432"
+  name: "appdb"
+  existingSecret: "db-credentials"
+  usernameKey: "username"
+  passwordKey: "password"
+
+# Worker configuration
+worker:
+  interval: "60"  # seconds
+  cleanupDays: "30"  # days
+
+# Environment variables
+env:
+  - name: DB_HOST
+    valueFrom:
+      secretKeyRef:
+        name: db-credentials
+        key: host
+  - name: DB_PORT
+    value: "5432"
+  - name: DB_NAME
+    valueFrom:
+      secretKeyRef:
+        name: db-credentials
+        key: dbname
+  - name: DB_USER
+    valueFrom:
+      secretKeyRef:
+        name: db-credentials
+        key: username
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: db-credentials
+        key: password
+  - name: WORKER_INTERVAL
+    value: "60"
+  - name: CLEANUP_DAYS
+    value: "30"
+
+# Network Policy
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+      - namespaceSelector: {}
+      ports:
+      - protocol: TCP
+        port: 5432  # PostgreSQL
+    - to:
+      - namespaceSelector: {}
+      ports:
+      - protocol: TCP
+        port: 443  # HTTPS
+      - protocol: TCP
+        port: 53   # DNS
+      - protocol: UDP
+        port: 53   # DNS

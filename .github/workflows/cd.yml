@@ -1,0 +1,251 @@
+name: CD - Deploy to EKS
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: 537651148488
+  ECR_API_REPOSITORY: cloud-native-app-dev-api-service
+  ECR_WORKER_REPOSITORY: cloud-native-app-dev-worker-service
+
+jobs:
+  # Push to ECR
+  push-to-ecr:
+    name: Push Images to ECR
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.set-tag.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download images
+        uses: actions/download-artifact@v3
+        with:
+          name: docker-images
+          path: /tmp
+        continue-on-error: true
+
+      - name: Set image tag
+        id: set-tag
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push API image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.set-tag.outputs.tag }}
+        run: |
+          cd microservices/api-service
+          docker build -t $ECR_REGISTRY/${{ env.ECR_API_REPOSITORY }}:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/${{ env.ECR_API_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.ECR_API_REPOSITORY }}:latest
+          docker push $ECR_REGISTRY/${{ env.ECR_API_REPOSITORY }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ env.ECR_API_REPOSITORY }}:latest
+
+      - name: Build, tag, and push Worker image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.set-tag.outputs.tag }}
+        run: |
+          cd microservices/worker-service
+          docker build -t $ECR_REGISTRY/${{ env.ECR_WORKER_REPOSITORY }}:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/${{ env.ECR_WORKER_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.ECR_WORKER_REPOSITORY }}:latest
+          docker push $ECR_REGISTRY/${{ env.ECR_WORKER_REPOSITORY }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ env.ECR_WORKER_REPOSITORY }}:latest
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign container images
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.set-tag.outputs.tag }}
+        run: |
+          cosign sign --key env://COSIGN_PRIVATE_KEY $ECR_REGISTRY/${{ env.ECR_API_REPOSITORY }}:$IMAGE_TAG
+          cosign sign --key env://COSIGN_PRIVATE_KEY $ECR_REGISTRY/${{ env.ECR_WORKER_REPOSITORY }}:$IMAGE_TAG
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+  # Deploy to Dev
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: push-to-ecr
+    if: github.ref == 'refs/heads/develop' || github.event.inputs.environment == 'dev'
+    environment:
+      name: dev
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name cloud-native-app-dev
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.12.0'
+
+      - name: Deploy API service
+        run: |
+          helm upgrade --install api-service ./infrastructure/kubernetes/helm/api-service \
+            --namespace dev \
+            --create-namespace \
+            --values ./infrastructure/kubernetes/helm/api-service/values-dev.yaml \
+            --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
+            --wait
+
+      - name: Deploy Worker service
+        run: |
+          helm upgrade --install worker-service ./infrastructure/kubernetes/helm/worker-service \
+            --namespace dev \
+            --create-namespace \
+            --values ./infrastructure/kubernetes/helm/worker-service/values-dev.yaml \
+            --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
+            --wait
+
+  # Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: push-to-ecr
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.environment == 'staging'
+    environment:
+      name: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name cloud-native-app-staging
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.12.0'
+
+      - name: Deploy API service
+        run: |
+          helm upgrade --install api-service ./infrastructure/kubernetes/helm/api-service \
+            --namespace staging \
+            --create-namespace \
+            --values ./infrastructure/kubernetes/helm/api-service/values-staging.yaml \
+            --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
+            --wait
+
+      - name: Deploy Worker service
+        run: |
+          helm upgrade --install worker-service ./infrastructure/kubernetes/helm/worker-service \
+            --namespace staging \
+            --create-namespace \
+            --values ./infrastructure/kubernetes/helm/worker-service/values-staging.yaml \
+            --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
+            --wait
+
+      - name: Run smoke tests
+        run: |
+          kubectl run smoke-test --image=curlimages/curl:latest --rm -i --restart=Never \
+            -- curl -f http://api-service.staging.svc.cluster.local/health
+
+  # Deploy to Production
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [push-to-ecr, deploy-staging]
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.environment == 'prod'
+    environment:
+      name: prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name cloud-native-app-prod
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.12.0'
+
+      - name: Deploy API service (Canary)
+        run: |
+          helm upgrade --install api-service ./infrastructure/kubernetes/helm/api-service \
+            --namespace prod \
+            --create-namespace \
+            --values ./infrastructure/kubernetes/helm/api-service/values-prod.yaml \
+            --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
+            --set replicaCount=1 \
+            --wait
+
+      - name: Wait for canary validation
+        run: sleep 300
+
+      - name: Full rollout
+        run: |
+          helm upgrade --install api-service ./infrastructure/kubernetes/helm/api-service \
+            --namespace prod \
+            --values ./infrastructure/kubernetes/helm/api-service/values-prod.yaml \
+            --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
+            --wait
+
+      - name: Deploy Worker service
+        run: |
+          helm upgrade --install worker-service ./infrastructure/kubernetes/helm/worker-service \
+            --namespace prod \
+            --values ./infrastructure/kubernetes/helm/worker-service/values-prod.yaml \
+            --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
+            --wait

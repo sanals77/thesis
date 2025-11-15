@@ -1,0 +1,28 @@
+# Staging environment values for api-service
+environment: staging
+
+image:
+  tag: "staging-latest"
+
+replicaCount: 2
+
+ingress:
+  enabled: true
+  hosts:
+    - host: api-staging.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 256Mi
