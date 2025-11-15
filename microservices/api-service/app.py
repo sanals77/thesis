@@ -39,6 +39,7 @@ DB_CONNECTIONS = Gauge(
 )
 ITEMS_TOTAL = Gauge('api_items_total', 'Total items in database')
 
+
 def track_request_time(f):
     """Decorator to track request duration"""
     @wraps(f)
@@ -61,6 +62,7 @@ def track_request_time(f):
             raise
     return decorated_function
 
+
 # Database configuration from environment variables
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
@@ -72,6 +74,7 @@ DB_CONFIG = {
     'connect_timeout': 5
 }
 
+
 def get_db_connection():
     """Establish database connection"""
     try:
@@ -81,6 +84,7 @@ def get_db_connection():
         logger.error(f"Database connection failed: {e}")
         return None
 
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
@@ -89,6 +93,7 @@ def health():
         'service': 'api-service',
         'timestamp': datetime.utcnow().isoformat()
     }), 200
+
 
 @app.route('/ready', methods=['GET'])
 def ready():
@@ -105,6 +110,7 @@ def ready():
             'status': 'not ready',
             'database': 'disconnected'
         }), 503
+
 
 @app.route('/api/items', methods=['GET'])
 @track_request_time
@@ -150,6 +156,7 @@ def get_items():
         logger.error(f"Error fetching items: {e}")
         return jsonify({'error': 'Failed to fetch items'}), 500
 
+
 @app.route('/api/items', methods=['POST'])
 @track_request_time
 def create_item():
@@ -194,6 +201,7 @@ def create_item():
         logger.error(f"Error creating item: {e}")
         return jsonify({'error': 'Failed to create item'}), 500
 
+
 @app.route('/api/items/<int:item_id>', methods=['DELETE'])
 def delete_item(item_id):
     """Delete an item"""
@@ -213,6 +221,7 @@ def delete_item(item_id):
         logger.error(f"Error deleting item: {e}")
         return jsonify({'error': 'Failed to delete item'}), 500
 
+
 @app.route('/metrics', methods=['GET'])
 def metrics():
     """Prometheus metrics endpoint"""
@@ -230,6 +239,7 @@ def metrics():
             pass
 
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
