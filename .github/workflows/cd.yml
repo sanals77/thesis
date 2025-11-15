@@ -133,7 +133,7 @@ jobs:
           helm upgrade --install worker-service ./infrastructure/kubernetes/helm/worker-service \
             --namespace dev \
             --create-namespace \
-            --values ./infrastructure/kubernetes/helm/worker-service/values-dev.yaml \
+            --values ./infrastructure/kubernetes/helm/worker-service/values.yaml \
             --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
             --wait
 
@@ -179,7 +179,7 @@ jobs:
           helm upgrade --install worker-service ./infrastructure/kubernetes/helm/worker-service \
             --namespace staging \
             --create-namespace \
-            --values ./infrastructure/kubernetes/helm/worker-service/values-staging.yaml \
+            --values ./infrastructure/kubernetes/helm/worker-service/values.yaml \
             --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
             --wait
 
@@ -241,6 +241,6 @@ jobs:
         run: |
           helm upgrade --install worker-service ./infrastructure/kubernetes/helm/worker-service \
             --namespace prod \
-            --values ./infrastructure/kubernetes/helm/worker-service/values-prod.yaml \
+            --values ./infrastructure/kubernetes/helm/worker-service/values.yaml \
             --set image.tag=${{ needs.push-to-ecr.outputs.image-tag }} \
             --wait
